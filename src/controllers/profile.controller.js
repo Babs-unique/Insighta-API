@@ -36,7 +36,6 @@ const createProfile = async (req, res) => {
     try {
         let genderData, ageData, nationalityData;
         
-        // Call APIs with individual error handling
         try {
             genderData = await classifyGender(nameLowerCase);
         } catch (error) {
@@ -55,32 +54,26 @@ const createProfile = async (req, res) => {
             return res.status(502).json({ status: "error", message: "Nationalize returned an invalid response" });
         }
 
-        // Validate Genderize response
         if (!genderData || !genderData.gender || genderData.count === 0 || genderData.count === null) {
             return res.status(502).json({ status: "error", message: "Genderize returned an invalid response" });
         }
 
-        // Validate Agify response
         if (!ageData || ageData.age === null || ageData.age === undefined) {
             return res.status(502).json({ status: "error", message: "Agify returned an invalid response" });
         }
 
-        // Validate Nationalize response
         if (!nationalityData || !nationalityData.country || nationalityData.country.length === 0) {
             return res.status(502).json({ status: "error", message: "Nationalize returned an invalid response" });
         }
 
-        // Process data
         const formattedGenderData = genderFormat(genderData);
         const ageGroup = classifyAgeGroup(ageData.age);
         const country = selectCountry(nationalityData);
 
-        // Validate processed data
         if (!formattedGenderData || !ageGroup || !country) {
             return res.status(502).json({ status: "error", message: "Failed to process demographic data" });
         }
 
-        // Create new profile
         const profileData = new Profile({
             id: generateUUID(),
             name: nameLowerCase,
