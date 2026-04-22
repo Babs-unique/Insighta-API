@@ -40,6 +40,10 @@ const profileSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
+    country_name:{
+        type: String,
+        required: true
+    },
     created_at: {
         type: String,
         required: true

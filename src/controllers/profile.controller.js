@@ -6,6 +6,10 @@ import generateUUID from "../utils/generateUUID.js";
 import genderFormat from "../utils/genderFormat.js";
 import classifyAgeGroup from "../utils/classifyAge.js";
 import selectCountry from "../utils/selectCountry.js";
+import countries from "i18n-iso-countries";
+import en from "i18n-iso-countries/langs/en.json" with { type: "json" };
+
+countries.registerLocale(en);
 
 const createProfile = async (req, res) => {
     const { name } = req.body;
@@ -73,6 +77,7 @@ const createProfile = async (req, res) => {
         if (!formattedGenderData || !ageGroup || !country) {
             return res.status(502).json({ status: "error", message: "Failed to process demographic data" });
         }
+        const countryName = countries.getName(country.country_id, "en", { select: "official" });
 
         const profileData = new Profile({
             id: generateUUID(),
@@ -84,6 +89,7 @@ const createProfile = async (req, res) => {
             age_group: ageGroup.toLowerCase(),
             country_id: country.country_id.toUpperCase(),
             country_probability: country.country_probability,
+            country_name: countryName,
             created_at: new Date().toISOString()
         });
 
@@ -121,19 +127,30 @@ const getProfileById = async (req, res) => {
 };
 
 const getProfiles = async (req, res) => {
-    const { gender, age_group, country_id } = req.query;
+    const { gender, age_group, country_id, min_age, max_age , min_gender_probability, min_country_probability} = req.query;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
 
+    const startIndex = (page - 1) * limit;
     try {
         const filter = {};
         if (gender) filter.gender = gender.toLowerCase();
         if (age_group) filter.age_group = age_group.toLowerCase();
         if (country_id) filter.country_id = country_id.toUpperCase();
+        if (min_age) filter.age = { ...filter.age, $gte: parseInt(min_age) };
+        if (max_age) filter.age = { ...filter.age, $lte: parseInt(max_age) };
+        if (min_gender_probability) filter.gender_probability = { ...filter.gender_probability, $gte: parseFloat(min_gender_probability) }; 
+        if (min_country_probability) filter.country_probability = { ...filter.country_probability, $gte: parseFloat(min_country_probability) };
 
-        const profiles = await Profile.find(filter);
-        
+
+        const profiles = await Profile.find(filter).skip(startIndex).limit(limit).sort({ created_at: -1 });
+
+        const allProfiles = await Profile.countDocuments(filter);
         return res.status(200).json({
             status: "success",
-            count: profiles.length,
+            page : page,
+            limit : limit,
+            total : allProfiles,
             data: profiles.map(p => ({
                 id: p.id,
                 name: p.name,
