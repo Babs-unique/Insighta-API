@@ -6,6 +6,7 @@ import generateUUID from "../utils/generateUUID.js";
 import genderFormat from "../utils/genderFormat.js";
 import classifyAgeGroup from "../utils/classifyAge.js";
 import selectCountry from "../utils/selectCountry.js";
+import parseNaturalLanguageQuery from "../utils/queryParser.js";
 import countries from "i18n-iso-countries";
 import en from "i18n-iso-countries/langs/en.json" with { type: "json" };
 
@@ -127,38 +128,143 @@ const getProfileById = async (req, res) => {
 };
 
 const getProfiles = async (req, res) => {
-    const { gender, age_group, country_id, min_age, max_age , min_gender_probability, min_country_probability} = req.query;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-
-    const startIndex = (page - 1) * limit;
     try {
+        const { gender, age_group, country_id, min_age, max_age, min_gender_probability, min_country_probability, sort_by, order } = req.query;
+        
+        let page = parseInt(req.query.page) || 1;
+        let limit = parseInt(req.query.limit) || 10;
+
+        if (isNaN(page) || page < 1) page = 1;
+        if (isNaN(limit) || limit < 1) limit = 10;
+        if (limit > 50) limit = 50; // Max limit of 50
+        
+        const startIndex = (page - 1) * limit;
+
         const filter = {};
-        if (gender) filter.gender = gender.toLowerCase();
-        if (age_group) filter.age_group = age_group.toLowerCase();
-        if (country_id) filter.country_id = country_id.toUpperCase();
-        if (min_age) filter.age = { ...filter.age, $gte: parseInt(min_age) };
-        if (max_age) filter.age = { ...filter.age, $lte: parseInt(max_age) };
-        if (min_gender_probability) filter.gender_probability = { ...filter.gender_probability, $gte: parseFloat(min_gender_probability) }; 
-        if (min_country_probability) filter.country_probability = { ...filter.country_probability, $gte: parseFloat(min_country_probability) };
+        
+        if (gender) {
+            if (typeof gender !== 'string') {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.gender = gender.toLowerCase();
+        }
+        
+        if (age_group) {
+            if (typeof age_group !== 'string') {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.age_group = age_group.toLowerCase();
+        }
+        
+        if (country_id) {
+            if (typeof country_id !== 'string') {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.country_id = country_id.toUpperCase();
+        }
+        
+        if (min_age !== undefined) {
+            const minAgeNum = parseInt(min_age);
+            if (isNaN(minAgeNum)) {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.age = { ...filter.age, $gte: minAgeNum };
+        }
+        
+        if (max_age !== undefined) {
+            const maxAgeNum = parseInt(max_age);
+            if (isNaN(maxAgeNum)) {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.age = { ...filter.age, $lte: maxAgeNum };
+        }
+        
+        if (min_gender_probability !== undefined) {
+            const minGenderProb = parseFloat(min_gender_probability);
+            if (isNaN(minGenderProb)) {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.gender_probability = { ...filter.gender_probability, $gte: minGenderProb };
+        }
+        
+        if (min_country_probability !== undefined) {
+            const minCountryProb = parseFloat(min_country_probability);
+            if (isNaN(minCountryProb)) {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            filter.country_probability = { ...filter.country_probability, $gte: minCountryProb };
+        }
 
+        let sortObj = { created_at: -1 };
+        if (sort_by) {
+            if (!['age', 'created_at', 'gender_probability'].includes(sort_by)) {
+                return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+            }
+            const sortOrder = order === 'asc' ? 1 : -1;
+            sortObj = { [sort_by]: sortOrder };
+        } else if (order) {
+            return res.status(422).json({ status: "error", message: "Invalid query parameters" });
+        }
 
-        const profiles = await Profile.find(filter).skip(startIndex).limit(limit).sort({ created_at: -1 });
+        const profiles = await Profile.find(filter)
+            .skip(startIndex)
+            .limit(limit)
+            .sort(sortObj);
 
-        const allProfiles = await Profile.countDocuments(filter);
+        const total = await Profile.countDocuments(filter);
+
         return res.status(200).json({
             status: "success",
-            page : page,
-            limit : limit,
-            total : allProfiles,
-            data: profiles.map(p => ({
-                id: p.id,
-                name: p.name,
-                gender: p.gender,
-                age: p.age,
-                age_group: p.age_group,
-                country_id: p.country_id
-            }))
+            page,
+            limit,
+            total,
+            data: profiles.map(p => p.toObject())
+        });
+    } catch (error) {
+        console.error(error);
+        return res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+};
+
+const searchProfiles = async (req, res) => {
+    try {
+        const { q } = req.query;
+
+        if (!q || typeof q !== 'string' || q.trim().length === 0) {
+            return res.status(400).json({ status: "error", message: "Missing or empty parameter" });
+        }
+
+        const filters = parseNaturalLanguageQuery(q);
+        
+        if (!filters) {
+            return res.status(200).json({
+                status: "error",
+                message: "Unable to interpret query"
+            });
+        }
+        let page = parseInt(req.query.page) || 1;
+        let limit = parseInt(req.query.limit) || 10;
+        
+        if (isNaN(page) || page < 1) page = 1;
+        if (isNaN(limit) || limit < 1) limit = 10;
+        if (limit > 50) limit = 50;
+        
+        const startIndex = (page - 1) * limit;
+
+        // Execute query
+        const profiles = await Profile.find(filters)
+            .skip(startIndex)
+            .limit(limit)
+            .sort({ created_at: -1 });
+
+        const total = await Profile.countDocuments(filters);
+
+        return res.status(200).json({
+            status: "success",
+            page,
+            limit,
+            total,
+            data: profiles.map(p => p.toObject())
         });
     } catch (error) {
         console.error(error);
@@ -195,4 +301,4 @@ const deleteProfile = async (req, res) => {
 
 
 
-export { createProfile, getProfileById, getProfiles, deleteProfile };
+export { createProfile, getProfileById, getProfiles, deleteProfile, searchProfiles };

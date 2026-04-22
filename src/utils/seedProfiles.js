@@ -15,7 +15,7 @@ const seedProfiles = async () => {
         const profilesWithIds = seedData.profiles.map(profile => ({
             ...profile,
             id: generateUUID(),
-            sample_size: 100, // Default sample size
+            sample_size: 100,
             created_at: new Date().toISOString()
         }));
         
