@@ -37,10 +37,12 @@ app.use(cors({
     origin: process.env.CLIENT_URI || 'http://localhost:5173',
     credentials: true
 }));
-app.use('/api', checkVersion)
+
 app.use('/api/auth', authLimiter);
 app.use(apiLimiter);
 app.use('/api/auth', authRoutes);
+
+app.use('/api', checkVersion)
 app.use('/api', nameRoutes);
 app.get("/", (req,res) =>{
     res.json({message: "Welcome to NameIntel API"});

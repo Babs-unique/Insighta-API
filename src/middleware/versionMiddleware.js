@@ -1,5 +1,5 @@
 const checkVersion = async (req, res, next) => {
-    if (req.path.includes('/api/auth/')) {
+    if (req.path.includes('/auth/')) {
         return next(); 
     }
     const apiVersion = req.headers['x-api-version'];
