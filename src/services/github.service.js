@@ -51,12 +51,33 @@ const getGitHubUser = async (accessToken) => {
     }
 
     try {
-        const response = await axios.get(githubConfig.apiUrl, {
-            headers: {
-                Authorization: `Bearer ${accessToken}`
+        const headers = {
+            Authorization: `Bearer ${accessToken}`,
+            Accept: "application/vnd.github+json"
+        };
+
+        const response = await axios.get(githubConfig.apiUrl, { headers });
+        const githubUser = response.data;
+
+        if (!githubUser.email) {
+            try {
+                const emailResponse = await axios.get(`${githubConfig.apiUrl}/emails`, { headers });
+                const emails = emailResponse.data;
+                const primaryEmail = emails.find(email => email.primary && email.verified)?.email
+                    || emails.find(email => email.verified)?.email
+                    || emails[0]?.email;
+
+                githubUser.email = primaryEmail;
+            } catch (emailError) {
+                console.warn("Unable to fetch GitHub email addresses:", emailError.response ? emailError.response.data : emailError.message);
             }
-        });
-        return response.data;
+        }
+
+        if (!githubUser.email) {
+            throw new Error("GitHub did not return an email address. Please ensure your account email is accessible by the app.");
+        }
+
+        return githubUser;
     } catch (error) {
         console.error("Error fetching GitHub user data:", error.response ? error.response.data : error.message);
         throw error;
