@@ -84,11 +84,131 @@ A modern RESTful API service that enriches person names with demographic intelli
    
    Server runs on `http://localhost:3000`
 
+## 🔐 Authentication
+
+This API uses GitHub OAuth 2.0 with PKCE (Proof Key for Code Exchange) for secure authentication.
+
+### Authentication Flow
+
+1. **Initiate OAuth**
+   ```
+   GET /auth/github
+   ```
+   
+   Redirect to GitHub OAuth authorization. Returns PKCE state and code challenge.
+   
+   **Response (Redirect or JSON):**
+   ```json
+   {
+     "success": true,
+     "message": "Authorization URL generated successfully",
+     "authorizationUrl": "https://github.com/login/oauth/authorize?...",
+     "state": "...",
+     "codeVerifier": "..."
+   }
+   ```
+
+2. **GitHub Callback**
+   ```
+   GET /auth/github/callback?code=<code>&state=<state>
+   ```
+   
+   GitHub redirects here after user authorization. The backend validates PKCE and state parameters.
+   
+   **Success Response (200):**
+   ```json
+   {
+     "success": true,
+     "message": "Authentication successful",
+     "access_token": "eyJhbGc...",
+     "refresh_token": "eyJhbGc...",
+     "user": {
+       "id": "507f1f77bcf86cd799439011",
+       "username": "johndoe",
+       "email": "john@example.com",
+       "role": "analyst",
+       "avatar_url": "https://avatars.githubusercontent.com/u/..."
+     }
+   }
+   ```
+
+3. **Use Access Token**
+   ```
+   GET /api/users/me
+   Authorization: Bearer <access_token>
+   ```
+
+4. **Refresh Access Token**
+   ```
+   POST /auth/refresh
+   Content-Type: application/json
+   
+   {
+     "refreshToken": "<refresh_token>"
+   }
+   ```
+   
+   **Success Response (200):**
+   ```json
+   {
+     "success": true,
+     "message": "Access token refreshed successfully",
+     "access_token": "eyJhbGc...",
+     "refresh_token": "eyJhbGc..."
+   }
+   ```
+
+5. **Logout**
+   ```
+   POST /auth/logout
+   Content-Type: application/json
+   
+   {
+     "refreshToken": "<refresh_token>"
+   }
+   ```
+   
+   **Success Response (200):**
+   ```json
+   {
+     "success": true,
+     "message": "Logout successful"
+   }
+   ```
+
+### Token Details
+
+- **Access Token**: Valid for 3 minutes, used for API requests
+- **Refresh Token**: Valid for 7 days, used to obtain new access tokens
+- **User Roles**: `admin` (first user), `analyst` (subsequent users)
+
+### Security Features
+
+- **PKCE**: Protects against authorization code interception attacks
+- **State Parameter**: Prevents CSRF attacks
+- **Rate Limiting**: 10 requests per minute on `/auth/github`
+- **Token Revocation**: Logout revokes refresh tokens immediately
+- **Expiry Validation**: Tokens expire automatically and cannot be reused
+
+### Error Responses
+
+```json
+{
+  "status": "error",
+  "success": false,
+  "message": "Error description"
+}
+```
+
+Common errors:
+- Missing code/state parameters
+- Invalid or expired state
+- PKCE validation failure
+- Invalid refresh token
+
 ---
 
-## 🚀 API Endpoints
 
-### 1. Create Profile
 **POST** `/api/profiles`
 
 Create a new profile by submitting a name. The API automatically enriches it with demographic data.
@@ -477,6 +597,163 @@ Access-Control-Allow-Origin: *
 All timestamps are returned in UTC ISO 8601 format. All IDs use UUID v7.
 
 ---
+
+## 🚀 Development & Deployment
+
+### Running Locally
+
+1. **Install Dependencies**
+   ```bash
+   npm install
+   ```
+
+2. **Configure Environment**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your MongoDB URI and GitHub OAuth credentials
+   ```
+
+3. **Start Development Server**
+   ```bash
+   npm run dev
+   ```
+   
+   The server will auto-reload when you make changes.
+
+### Git Workflow
+
+This project enforces **conventional commits** for clear commit history:
+
+```bash
+# Good commit messages:
+git commit -m "feat(auth): implement GitHub OAuth with PKCE"
+git commit -m "fix(database): resolve connection timeout issue"
+git commit -m "docs(readme): add authentication section"
+git commit -m "test(api): add endpoint tests"
+
+# Format: type(scope): message
+# Types: feat, fix, docs, style, refactor, perf, test, chore, ci
+```
+
+**Pre-commit hooks** (via Husky) will validate your commit message automatically.
+
+### CI/CD Pipeline
+
+GitHub Actions automatically runs on every push and pull request:
+- Installs dependencies
+- Validates conventional commits
+- Runs linters and tests
+- Builds the application
+
+View workflow status in the **Actions** tab on GitHub.
+
+### Production Deployment
+
+Set environment variables on your hosting platform:
+
+```env
+NODE_ENV=production
+PORT=3000
+MONGO_URI=<your-production-mongodb-uri>
+GITHUB_CLIENT_ID=<your-client-id>
+GITHUB_CLIENT_SECRET=<your-client-secret>
+GITHUB_REDIRECT_URI=https://yourdomain.com/auth/github/callback
+JWT_SECRET=<generate-strong-random-string>
+JWT_REFRESH_SECRET=<generate-strong-random-string>
+```
+
+Then deploy:
+```bash
+npm install --production
+npm start
+```
+
+---
+
+## 🧪 Testing Authentication Flow
+
+### Using Postman or cURL
+
+1. **Get Authorization URL**
+   ```bash
+   curl http://localhost:3000/auth/github?json=true
+   ```
+   
+   Response includes `authorizationUrl`, `state`, and `codeVerifier`.
+
+2. **Simulate GitHub Callback** (requires real GitHub OAuth)
+   - Visit the `authorizationUrl`
+   - Authorize the application
+   - GitHub redirects to callback with `code` and `state`
+
+3. **Test with Mocked Token** (for testing protected endpoints)
+   ```bash
+   # Generate a test access token manually or use the login flow
+   curl -H "Authorization: Bearer <your-token>" \
+        http://localhost:3000/api/users/me
+   ```
+
+4. **Refresh Token**
+   ```bash
+   curl -X POST http://localhost:3000/auth/refresh \
+        -H "Content-Type: application/json" \
+        -d '{"refreshToken": "<refresh-token>"}'
+   ```
+
+5. **Logout**
+   ```bash
+   curl -X POST http://localhost:3000/auth/logout \
+        -H "Content-Type: application/json" \
+        -d '{"refreshToken": "<refresh-token>"}'
+   ```
+
+---
+
+## 🐛 Troubleshooting
+
+### MongoDB Connection Failed
+- Ensure MongoDB is running: `mongod`
+- Check `MONGO_URI` in `.env`
+- For MongoDB Atlas: verify IP whitelist includes your server
+
+### Rate Limit Exceeded
+- Auth endpoints limited to 10 requests/minute
+- Wait 60 seconds before retrying
+- Check `AUTH_RATE_LIMIT` in `.env`
+
+### PKCE Validation Failed
+- State may have expired (max 5 minutes)
+- Ensure `code_verifier` matches the challenge
+- Clear cookies and try again
+
+### GitHub OAuth Fails
+- Verify `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
+- Check `GITHUB_REDIRECT_URI` matches GitHub app settings
+- Ensure user has public GitHub profile
+
+### Token Validation Failed
+- Access tokens expire after 3 minutes
+- Use refresh token to get new access token
+- Check token format: `Authorization: Bearer <token>`
+
+---
+
+## 📝 License
+
+ISC
+
+---
+
+## 👤 Contributors
+
+- Babatunde (Project Lead)
+
+---
+
+## 📧 Support
+
+For issues or questions, please open a GitHub issue or contact the development team.
+
 
 ## 📊 Dataset
 

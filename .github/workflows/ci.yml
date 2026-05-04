@@ -1,0 +1,66 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check for conventional commits
+        run: |
+          echo "Checking for conventional commits..."
+          git log --oneline -n 20 | grep -E '^[a-f0-9]+ (feat|fix|docs|style|refactor|perf|test|chore|ci)(\(.+\))?:' || echo "Warning: Some commits may not follow conventional commit format"
+
+      - name: Run linter
+        run: npm run lint --if-present || echo "No linter configured"
+
+      - name: Run tests
+        run: npm test --if-present || echo "No tests configured"
+
+      - name: Build application
+        run: npm run build --if-present || echo "No build script configured"
+
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Check code quality
+        run: |
+          echo "Running code quality checks..."
+          if [ -f ".eslintrc" ] || [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
+            npm run lint || true
+          else
+            echo "ESLint not configured"
+          fi

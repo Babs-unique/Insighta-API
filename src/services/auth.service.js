@@ -18,15 +18,20 @@ const userLogin = async (githubUser) => {
         });
         user.last_login_at = new Date();
         await user.save();
+    } else {
+        // Update last login time for existing users
+        user.last_login_at = new Date();
+        await user.save();
     }
 
     const accessToken = generateAccessToken({ userId: user._id.toString(), role: user.role });
-    const refreshToken = generateRefreshToken({ userId: user._id.toString(), role: user.role });
+    const newRefreshToken = generateRefreshToken({ userId: user._id.toString(), role: user.role });
 
+    // Set expiration to 7 days
     const tokenDoc = new tokenModel({
         userId: user._id.toString(),
-        refreshToken,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        refreshToken: newRefreshToken,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         isRevoked: false
     });
     await tokenDoc.save();
@@ -34,7 +39,7 @@ const userLogin = async (githubUser) => {
     return {
         user,
         accessToken,
-        refreshToken
+        refreshToken: newRefreshToken
     };
 };
 
@@ -51,9 +56,10 @@ const refreshToken = async (oldRefreshToken) => {
     });
 
     if (!tokenDoc) {
-        throw new Error("Invalid refresh token");
+        throw new Error("Invalid or expired refresh token");
     }
 
+    // Revoke old token
     tokenDoc.isRevoked = true;
     await tokenDoc.save();
 
@@ -65,15 +71,19 @@ const refreshToken = async (oldRefreshToken) => {
     const newAccessToken = generateAccessToken({ userId: user._id.toString(), role: user.role });
     const newRefreshToken = generateRefreshToken({ userId: user._id.toString(), role: user.role });
 
+    // Create new token document with 7 day expiration
     const newTokenDoc = new tokenModel({
         userId: user._id.toString(),
         refreshToken: newRefreshToken,
-        expiresAt: Date.now() + 5 * 60 * 1000,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         isRevoked: false
     });
     await newTokenDoc.save();
 
-    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+    return { 
+        accessToken: newAccessToken, 
+        refreshToken: newRefreshToken 
+    };
 };
 
 const logout = async (refreshTokenValue) => {
